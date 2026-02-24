@@ -67,6 +67,9 @@ const App: React.FC = () => {
     // Check current session
     supabase.auth.getSession().then(({ data: { session } }) => {
       handleSupabaseSession(session);
+    }).catch(err => {
+      console.error("Supabase session check failed:", err);
+      setIsAuthLoading(false);
     });
 
     // Listen for auth changes
@@ -80,9 +83,10 @@ const App: React.FC = () => {
   const handleSupabaseSession = (session: any) => {
     if (session?.user) {
       const email = session.user.email;
-      const whitelist = (import.meta.env.VITE_AUTH_WHITELIST || "").split(",").map((e: string) => e.trim().toLowerCase());
+      const whitelistEnv = import.meta.env.VITE_AUTH_WHITELIST || "";
+      const whitelist = whitelistEnv.split(",").map((e: string) => e.trim().toLowerCase()).filter(e => e !== "");
       
-      if (email && whitelist.includes(email.toLowerCase())) {
+      if (email && (whitelist.length === 0 || whitelist.includes(email.toLowerCase()))) {
         setUser({
           id: session.user.id,
           email: email,
@@ -92,7 +96,7 @@ const App: React.FC = () => {
         setAuthError(null);
       } else {
         setUser(null);
-        setAuthError("Your email is not whitelisted.");
+        setAuthError(`Email "${email}" is not authorized. Please add it to the whitelist.`);
         supabase?.auth.signOut();
       }
     } else {
@@ -302,9 +306,20 @@ const App: React.FC = () => {
             </button>
           )}
           
-          <p className="text-[10px] text-gray-400">
-            Access is restricted to whitelisted email addresses only.
-          </p>
+          <div className="pt-4 border-t border-gray-100 flex flex-col gap-2">
+            <p className="text-[10px] text-gray-400">
+              Access is restricted to whitelisted email addresses only.
+            </p>
+            <button 
+              onClick={() => {
+                localStorage.clear();
+                window.location.reload();
+              }}
+              className="text-[10px] text-indigo-500 hover:underline text-left w-fit"
+            >
+              Clear local session data
+            </button>
+          </div>
         </div>
       </div>
     );
