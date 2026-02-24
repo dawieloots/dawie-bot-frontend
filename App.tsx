@@ -54,6 +54,7 @@ const App: React.FC = () => {
   const [showSettings, setShowSettings] = useState(false);
   const [isSidebarOpen, setIsSidebarOpen] = useState(true);
   const [copiedId, setCopiedId] = useState<string | null>(null);
+  const [showDebug, setShowDebug] = useState(false);
 
   const scrollRef = useRef<HTMLDivElement>(null);
 
@@ -319,6 +320,22 @@ const App: React.FC = () => {
             >
               Clear local session data
             </button>
+            <button 
+              onClick={() => setShowDebug(!showDebug)}
+              className="text-[10px] text-gray-400 hover:underline text-left w-fit"
+            >
+              {showDebug ? 'Hide' : 'Show'} Debug Info
+            </button>
+            
+            {showDebug && (
+              <div className="mt-2 p-2 bg-gray-100 rounded text-[9px] font-mono text-gray-600 break-all text-left">
+                <p>URL: {supabaseUrl || 'MISSING'}</p>
+                <p>Key: {supabaseAnonKey ? `${supabaseAnonKey.substring(0, 10)}...` : 'MISSING'}</p>
+                <p>Whitelist: {import.meta.env.VITE_AUTH_WHITELIST || 'EMPTY'}</p>
+                <p>Origin: {window.location.origin}</p>
+                <p>Href: {window.location.href}</p>
+              </div>
+            )}
           </div>
         </div>
       </div>
