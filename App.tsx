@@ -49,7 +49,7 @@ const App: React.FC = () => {
   const [inputText, setInputText] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [config, setConfig] = useState<N8nConfig>({ 
-    webhookUrl: 'https://goodliest-refly-brian.ngrok-free.dev/web' 
+    webhookUrl: 'https://dawie-bot-production.up.railway.app/web' 
   });
   const [showSettings, setShowSettings] = useState(false);
   const [isSidebarOpen, setIsSidebarOpen] = useState(true);
