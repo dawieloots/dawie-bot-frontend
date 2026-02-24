@@ -23,7 +23,6 @@ import {
 } from 'lucide-react';
 import { SenderType, Message, ChatSession, N8nConfig } from './types.ts';
 import { N8nService } from './services/n8nService.ts';
-import { geminiService } from './services/geminiService.ts';
 
 const LOCAL_STORAGE_KEY = 'n8n_chat_config';
 const CHAT_HISTORY_KEY = 'n8n_chat_history';
@@ -172,19 +171,14 @@ const App: React.FC = () => {
     setSessions(prev => [newSession, ...prev]);
     setActiveSessionId(id);
 
-    // Generate AI welcome
-    try {
-      const welcome = await geminiService.generateInitialGreeting("FlowBot");
-      const welcomeMsg: Message = {
-        id: crypto.randomUUID(),
-        text: welcome,
-        sender: SenderType.AGENT,
-        timestamp: Date.now(),
-      };
-      setSessions(prev => prev.map(s => s.id === id ? { ...s, messages: [welcomeMsg] } : s));
-    } catch (e) {
-      console.error("Gemini welcome failed", e);
-    }
+    // Static welcome message
+    const welcomeMsg: Message = {
+      id: crypto.randomUUID(),
+      text: "Hello! I'm your n8n assistant. How can I help you today?",
+      sender: SenderType.AGENT,
+      timestamp: Date.now(),
+    };
+    setSessions(prev => prev.map(s => s.id === id ? { ...s, messages: [welcomeMsg] } : s));
   }, []);
 
   const deleteSession = (id: string, e: React.MouseEvent) => {
