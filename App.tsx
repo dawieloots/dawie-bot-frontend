@@ -16,7 +16,9 @@ import {
   Trash2,
   WifiOff,
   Copy,
-  Check
+  Check,
+  LogOut,
+  Lock
 } from 'lucide-react';
 import { SenderType, Message, ChatSession, N8nConfig } from './types.ts';
 import { N8nService } from './services/n8nService.ts';
@@ -25,8 +27,17 @@ import { geminiService } from './services/geminiService.ts';
 const LOCAL_STORAGE_KEY = 'n8n_chat_config';
 const CHAT_HISTORY_KEY = 'n8n_chat_history';
 
+interface UserProfile {
+  id: string;
+  email: string;
+  name: string;
+  picture: string;
+}
+
 const App: React.FC = () => {
   // State
+  const [user, setUser] = useState<UserProfile | null>(null);
+  const [isAuthLoading, setIsAuthLoading] = useState(true);
   const [sessions, setSessions] = useState<ChatSession[]>([]);
   const [activeSessionId, setActiveSessionId] = useState<string | null>(null);
   const [inputText, setInputText] = useState('');
@@ -42,6 +53,7 @@ const App: React.FC = () => {
 
   // Initialization
   useEffect(() => {
+    checkAuth();
     // Load config
     const savedConfig = localStorage.getItem(LOCAL_STORAGE_KEY);
     if (savedConfig) {
@@ -79,6 +91,49 @@ const App: React.FC = () => {
       scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
     }
   }, [sessions, activeSessionId]);
+
+  useEffect(() => {
+    const handleMessage = (event: MessageEvent) => {
+      if (event.data?.type === 'OAUTH_AUTH_SUCCESS') {
+        checkAuth();
+      } else if (event.data?.type === 'OAUTH_AUTH_ERROR') {
+        alert(event.data.error || 'Authentication failed');
+      }
+    };
+    window.addEventListener('message', handleMessage);
+    return () => window.removeEventListener('message', handleMessage);
+  }, []);
+
+  const checkAuth = async () => {
+    try {
+      const res = await fetch('/api/auth/user');
+      if (res.ok) {
+        const data = await res.json();
+        setUser(data.user);
+      } else {
+        setUser(null);
+      }
+    } catch (e) {
+      setUser(null);
+    } finally {
+      setIsAuthLoading(false);
+    }
+  };
+
+  const handleLogin = async () => {
+    try {
+      const res = await fetch('/api/auth/google/url');
+      const { url } = await res.json();
+      window.open(url, 'google_oauth', 'width=500,height=600');
+    } catch (e) {
+      alert('Failed to start login flow');
+    }
+  };
+
+  const handleLogout = async () => {
+    await fetch('/api/auth/logout');
+    setUser(null);
+  };
 
   const createNewSession = useCallback(async () => {
     const id = crypto.randomUUID();
@@ -179,6 +234,43 @@ const App: React.FC = () => {
     });
   };
 
+  if (isAuthLoading) {
+    return (
+      <div className="h-screen w-screen flex items-center justify-center bg-gray-50">
+        <div className="flex flex-col items-center gap-4">
+          <div className="w-12 h-12 border-4 border-indigo-600 border-t-transparent rounded-full animate-spin"></div>
+          <p className="text-gray-500 font-medium">Verifying access...</p>
+        </div>
+      </div>
+    );
+  }
+
+  if (!user) {
+    return (
+      <div className="h-screen w-screen flex items-center justify-center bg-gray-50 p-4">
+        <div className="max-w-md w-full bg-white rounded-3xl shadow-xl p-8 border border-gray-100 text-center space-y-8">
+          <div className="w-20 h-20 bg-indigo-50 rounded-2xl flex items-center justify-center mx-auto">
+            <Lock className="w-10 h-10 text-indigo-600" />
+          </div>
+          <div className="space-y-2">
+            <h1 className="text-2xl font-bold text-gray-900">Dawie se chatbot</h1>
+            <p className="text-gray-500">Please sign in to access your personal assistant.</p>
+          </div>
+          <button
+            onClick={handleLogin}
+            className="w-full flex items-center justify-center gap-3 bg-white border border-gray-200 py-3.5 rounded-xl font-semibold text-gray-700 hover:bg-gray-50 transition-all shadow-sm active:scale-95"
+          >
+            <img src="https://www.gstatic.com/firebasejs/ui/2.0.0/images/auth/google.svg" className="w-5 h-5" alt="Google" />
+            Sign in with Google
+          </button>
+          <p className="text-[10px] text-gray-400">
+            Access is restricted to whitelisted email addresses only.
+          </p>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="flex h-screen bg-gray-50 text-gray-900 overflow-hidden font-sans">
       {/* Sidebar */}
@@ -222,13 +314,20 @@ const App: React.FC = () => {
           ))}
         </div>
 
-        <div className="p-4 border-t border-gray-100">
+        <div className="p-4 border-t border-gray-100 space-y-2">
           <button 
             onClick={() => setShowSettings(true)}
             className="w-full flex items-center gap-3 p-3 rounded-xl text-gray-600 hover:bg-gray-100 hover:text-gray-900 transition-all text-sm font-medium"
           >
             <SettingsIcon className="w-5 h-5" />
             Settings
+          </button>
+          <button 
+            onClick={handleLogout}
+            className="w-full flex items-center gap-3 p-3 rounded-xl text-red-600 hover:bg-red-50 transition-all text-sm font-medium"
+          >
+            <LogOut className="w-5 h-5" />
+            Sign Out
           </button>
         </div>
       </aside>
@@ -254,14 +353,19 @@ const App: React.FC = () => {
             </div>
           </div>
 
-          <div className="flex items-center gap-2">
-            <div className={`px-2 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-tight ${config.webhookUrl ? 'bg-green-100 text-green-700' : 'bg-amber-100 text-amber-700'}`}>
-              {config.webhookUrl ? 'Connected' : 'Offline'}
+            <div className="flex items-center gap-3">
+              <div className="flex flex-col items-end hidden sm:flex">
+                <span className="text-xs font-semibold text-gray-700">{user.name}</span>
+                <span className="text-[10px] text-gray-400">{user.email}</span>
+              </div>
+              <img src={user.picture} className="w-8 h-8 rounded-full border border-gray-200" alt={user.name} />
+              <div className={`px-2 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-tight ${config.webhookUrl ? 'bg-green-100 text-green-700' : 'bg-amber-100 text-amber-700'}`}>
+                {config.webhookUrl ? 'Connected' : 'Offline'}
+              </div>
+              <button className="p-2 hover:bg-gray-100 rounded-lg text-gray-400">
+                <MoreVertical className="w-5 h-5" />
+              </button>
             </div>
-            <button className="p-2 hover:bg-gray-100 rounded-lg text-gray-400">
-              <MoreVertical className="w-5 h-5" />
-            </button>
-          </div>
         </header>
 
         {/* Chat Area */}
