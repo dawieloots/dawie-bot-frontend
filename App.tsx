@@ -1,6 +1,7 @@
 
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import ReactMarkdown from 'react-markdown';
+import { createClient } from '@supabase/supabase-js';
 import { 
   Send, 
   Settings as SettingsIcon, 
@@ -27,6 +28,11 @@ import { geminiService } from './services/geminiService.ts';
 const LOCAL_STORAGE_KEY = 'n8n_chat_config';
 const CHAT_HISTORY_KEY = 'n8n_chat_history';
 
+// Supabase initialization
+const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
+const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
+const supabase = (supabaseUrl && supabaseAnonKey) ? createClient(supabaseUrl, supabaseAnonKey) : null;
+
 interface UserProfile {
   id: string;
   email: string;
@@ -38,6 +44,7 @@ const App: React.FC = () => {
   // State
   const [user, setUser] = useState<UserProfile | null>(null);
   const [isAuthLoading, setIsAuthLoading] = useState(true);
+  const [authError, setAuthError] = useState<string | null>(null);
   const [sessions, setSessions] = useState<ChatSession[]>([]);
   const [activeSessionId, setActiveSessionId] = useState<string | null>(null);
   const [inputText, setInputText] = useState('');
@@ -53,7 +60,68 @@ const App: React.FC = () => {
 
   // Initialization
   useEffect(() => {
-    checkAuth();
+    if (!supabase) {
+      setIsAuthLoading(false);
+      return;
+    }
+
+    // Check current session
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      handleSupabaseSession(session);
+    });
+
+    // Listen for auth changes
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
+      handleSupabaseSession(session);
+    });
+
+    return () => subscription.unsubscribe();
+  }, []);
+
+  const handleSupabaseSession = (session: any) => {
+    if (session?.user) {
+      const email = session.user.email;
+      const whitelist = (import.meta.env.VITE_AUTH_WHITELIST || "").split(",").map((e: string) => e.trim().toLowerCase());
+      
+      if (email && whitelist.includes(email.toLowerCase())) {
+        setUser({
+          id: session.user.id,
+          email: email,
+          name: session.user.user_metadata?.full_name || email.split('@')[0],
+          picture: session.user.user_metadata?.avatar_url || `https://ui-avatars.com/api/?name=${email}`,
+        });
+        setAuthError(null);
+      } else {
+        setUser(null);
+        setAuthError("Your email is not whitelisted.");
+        supabase?.auth.signOut();
+      }
+    } else {
+      setUser(null);
+    }
+    setIsAuthLoading(false);
+  };
+
+  const handleLogin = async () => {
+    if (!supabase) {
+      alert("Supabase is not configured. Please set VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY.");
+      return;
+    }
+    const { error } = await supabase.auth.signInWithOAuth({
+      provider: 'google',
+      options: {
+        redirectTo: window.location.origin
+      }
+    });
+    if (error) alert(error.message);
+  };
+
+  const handleLogout = async () => {
+    await supabase?.auth.signOut();
+    setUser(null);
+  };
+
+  useEffect(() => {
     // Load config
     const savedConfig = localStorage.getItem(LOCAL_STORAGE_KEY);
     if (savedConfig) {
@@ -91,49 +159,6 @@ const App: React.FC = () => {
       scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
     }
   }, [sessions, activeSessionId]);
-
-  useEffect(() => {
-    const handleMessage = (event: MessageEvent) => {
-      if (event.data?.type === 'OAUTH_AUTH_SUCCESS') {
-        checkAuth();
-      } else if (event.data?.type === 'OAUTH_AUTH_ERROR') {
-        alert(event.data.error || 'Authentication failed');
-      }
-    };
-    window.addEventListener('message', handleMessage);
-    return () => window.removeEventListener('message', handleMessage);
-  }, []);
-
-  const checkAuth = async () => {
-    try {
-      const res = await fetch('/api/auth/user');
-      if (res.ok) {
-        const data = await res.json();
-        setUser(data.user);
-      } else {
-        setUser(null);
-      }
-    } catch (e) {
-      setUser(null);
-    } finally {
-      setIsAuthLoading(false);
-    }
-  };
-
-  const handleLogin = async () => {
-    try {
-      const res = await fetch('/api/auth/google/url');
-      const { url } = await res.json();
-      window.open(url, 'google_oauth', 'width=500,height=600');
-    } catch (e) {
-      alert('Failed to start login flow');
-    }
-  };
-
-  const handleLogout = async () => {
-    await fetch('/api/auth/logout');
-    setUser(null);
-  };
 
   const createNewSession = useCallback(async () => {
     const id = crypto.randomUUID();
@@ -256,13 +281,33 @@ const App: React.FC = () => {
             <h1 className="text-2xl font-bold text-gray-900">Dawie se chatbot</h1>
             <p className="text-gray-500">Please sign in to access your personal assistant.</p>
           </div>
-          <button
-            onClick={handleLogin}
-            className="w-full flex items-center justify-center gap-3 bg-white border border-gray-200 py-3.5 rounded-xl font-semibold text-gray-700 hover:bg-gray-50 transition-all shadow-sm active:scale-95"
-          >
-            <img src="https://www.gstatic.com/firebasejs/ui/2.0.0/images/auth/google.svg" className="w-5 h-5" alt="Google" />
-            Sign in with Google
-          </button>
+          
+          {authError && (
+            <div className="p-3 bg-red-50 border border-red-100 rounded-xl text-red-600 text-xs font-medium">
+              {authError}
+            </div>
+          )}
+
+          {!supabase ? (
+            <div className="p-4 bg-amber-50 border border-amber-100 rounded-xl text-amber-700 text-xs text-left space-y-2">
+              <p className="font-bold">Supabase Configuration Required</p>
+              <p>To use authentication on GitHub Pages, you need to:</p>
+              <ul className="list-disc pl-4 space-y-1">
+                <li>Create a Supabase project</li>
+                <li>Enable Google Auth in Supabase dashboard</li>
+                <li>Add your Supabase URL and Anon Key to environment variables</li>
+              </ul>
+            </div>
+          ) : (
+            <button
+              onClick={handleLogin}
+              className="w-full flex items-center justify-center gap-3 bg-white border border-gray-200 py-3.5 rounded-xl font-semibold text-gray-700 hover:bg-gray-50 transition-all shadow-sm active:scale-95"
+            >
+              <img src="https://www.gstatic.com/firebasejs/ui/2.0.0/images/auth/google.svg" className="w-5 h-5" alt="Google" />
+              Sign in with Google
+            </button>
+          )}
+          
           <p className="text-[10px] text-gray-400">
             Access is restricted to whitelisted email addresses only.
           </p>
