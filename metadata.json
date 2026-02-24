@@ -1,0 +1,7 @@
+{
+  "name": "Dawie's Conversational Chatbot",
+  "description": "Dawie se chatbot as vervanging vir ChatGPT se UI",
+  "requestFramePermissions": [
+    "microphone"
+  ]
+}
